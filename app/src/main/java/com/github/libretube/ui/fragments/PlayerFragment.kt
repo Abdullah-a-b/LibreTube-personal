@@ -51,6 +51,7 @@ import androidx.media3.session.MediaController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.github.libretube.R
 import com.github.libretube.api.JsonHelper
+import com.github.libretube.api.MediaServiceRepository
 import com.github.libretube.api.obj.ChapterSegment
 import com.github.libretube.api.obj.Segment
 import com.github.libretube.api.obj.Streams
@@ -58,6 +59,7 @@ import com.github.libretube.compat.PictureInPictureCompat
 import com.github.libretube.compat.PictureInPictureParamsCompat
 import com.github.libretube.constants.IntentData
 import com.github.libretube.databinding.FragmentPlayerBinding
+import com.github.libretube.api.obj.StreamItem
 import com.github.libretube.db.DatabaseHolder
 import com.github.libretube.enums.FileType
 import com.github.libretube.enums.PlayerCommand
@@ -74,6 +76,8 @@ import com.github.libretube.helpers.BackgroundHelper
 import com.github.libretube.helpers.DownloadHelper
 import com.github.libretube.helpers.ImageHelper
 import com.github.libretube.helpers.NavigationHelper
+import com.github.libretube.helpers.ArtistHelper
+import com.github.libretube.helpers.MusicSuggestions
 import com.github.libretube.helpers.PlayerHelper
 import com.github.libretube.helpers.PlayerHelper.getCurrentSegment
 import com.github.libretube.helpers.ThemeHelper
@@ -1202,22 +1206,102 @@ class PlayerFragment : Fragment(R.layout.fragment_player), CustomPlayerCallback 
     private suspend fun showRelatedStreams() {
         if (!PlayerHelper.relatedStreamsEnabled) return
 
-        val relatedStreams = if (isOffline) {
-            withContext(Dispatchers.IO) {
+        val relatedLayoutManager = binding.relatedRecView.layoutManager as LinearLayoutManager
+        val adapter = VideoCardsAdapter(
+            columnWidthDp = if (relatedLayoutManager.orientation == LinearLayoutManager.HORIZONTAL) 250f else null
+        )
+        binding.relatedRecView.adapter = adapter
+
+        if (isOffline) {
+            adapter.submitList(withContext(Dispatchers.IO) {
                 DatabaseHolder.Database.downloadDao().getAll()
                     .filter { it.download.videoId != videoId }
                     .map { it.download.toStreamItem() }
-            }
-        } else {
-            streams.relatedStreams.filter { !it.title.isNullOrBlank() }
+            })
+            return
         }
 
-        val relatedLayoutManager = binding.relatedRecView.layoutManager as LinearLayoutManager
-        binding.relatedRecView.adapter = VideoCardsAdapter(
-            columnWidthDp = if (relatedLayoutManager.orientation == LinearLayoutManager.HORIZONTAL) 250f else null
-        ).also { adapter ->
-            adapter.submitList(relatedStreams)
+        val related = streams.relatedStreams.filter { !it.title.isNullOrBlank() }
+        val uploaderUrl = streams.uploaderUrl
+
+        // a signed out client gets whatever is popular in the region mixed into its related
+        // videos, which has no place next to a song
+        if (MusicSuggestions.isMusic(streams.category)) {
+            showMusicSuggestions(adapter, related)
+            return
         }
+
+        // videos of the channel that is playing right now are the ones actually on topic,
+        // so they are moved to the front instead of being scattered across the list
+        val (sameChannel, others) = related.partition {
+            uploaderUrl != null && it.uploaderUrl == uploaderUrl
+        }
+        adapter.submitList(sameChannel + others)
+
+        // the suggestions are already on screen at this point, so loading more afterwards only
+        // extends the list instead of delaying it
+        if (uploaderUrl == null) return
+        val more = withContext(Dispatchers.IO) {
+            moreFromChannel(uploaderUrl, related, CHANNEL_PICKS)
+        }
+        if (more.isNotEmpty()) adapter.submitList(sameChannel + more + others)
+    }
+
+    /**
+     * Suggestions for a song: music, by whoever.
+     */
+    private suspend fun showMusicSuggestions(
+        adapter: VideoCardsAdapter,
+        related: List<StreamItem>
+    ) {
+        val artist = MusicSuggestions.artistOf(streams.title, streams.uploader)
+        val (sameArtist, otherArtists) = MusicSuggestions.split(related, artist)
+        adapter.submitList(sameArtist + otherArtists)
+
+        val works = withContext(Dispatchers.IO) { worksOfArtist(artist, related, MUSIC_PICKS) }
+        if (works.isEmpty()) return
+
+        adapter.submitList(MusicSuggestions.order(sameArtist, works, otherArtists))
+    }
+
+    /**
+     * Search for other work of the given artist, leaving out everything that is suggested
+     * anyway or is the video itself.
+     */
+    private suspend fun worksOfArtist(
+        artist: String,
+        related: List<StreamItem>,
+        limit: Int
+    ): List<StreamItem> {
+        val seenIds = related.mapNotNull { it.url?.toID() }.toHashSet()
+        seenIds.add(videoId)
+
+        return runCatching {
+            MediaServiceRepository.instance.getSearchResults(artist, "videos").items
+        }.getOrNull().orEmpty()
+            .filter { it.type == StreamItem.TYPE_STREAM }
+            .map { it.toStreamItem() }
+            .filter { !it.title.isNullOrBlank() && it.url?.toID()?.let(seenIds::add) == true }
+            .take(limit)
+    }
+
+    /**
+     * Load more videos of the channel currently playing, leaving out everything that is
+     * suggested anyway or is the video itself.
+     */
+    private suspend fun moreFromChannel(
+        uploaderUrl: String,
+        related: List<StreamItem>,
+        limit: Int
+    ): List<StreamItem> {
+        val seenIds = related.mapNotNull { it.url?.toID() }.toHashSet()
+        seenIds.add(videoId)
+
+        return runCatching {
+            MediaServiceRepository.instance.getChannel(uploaderUrl.toID()).relatedStreams
+        }.getOrNull().orEmpty()
+            .filter { !it.title.isNullOrBlank() && it.url?.toID()?.let(seenIds::add) == true }
+            .take(limit)
     }
 
     private fun showAutoPlayCountdown() {
@@ -1356,6 +1440,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player), CustomPlayerCallback 
     fun onUserLeaveHint() {
         if (shouldStartPiP()) {
             PictureInPictureCompat.enterPictureInPictureMode(requireActivity(), pipParams)
+            return
+        }
+
+        // hand playback over to the audio player, so that only the notification remains.
+        // still safe to commit fragment transactions here, as the activity is not stopped yet
+        val isPlaying = ::playerController.isInitialized && playerController.isPlaying
+        if (PlayerHelper.minimizeBehavior == "background" && isPlaying) {
+            switchToAudioMode()
         }
     }
 
@@ -1370,7 +1462,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player), CustomPlayerCallback 
                         isPlaying
                     )
                 )
-                .setAutoEnterEnabled(isPlaying)
+                .setAutoEnterEnabled(isPlaying && PlayerHelper.minimizeBehavior == "pip")
                 .apply {
                     if (isPlaying) {
                         setAspectRatio(playerController.videoSize)
@@ -1387,7 +1479,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player), CustomPlayerCallback 
     }
 
     private fun shouldStartPiP(): Boolean {
-        return isPipAvailable() && ::playerController.isInitialized && playerController.isPlaying
+        return PlayerHelper.minimizeBehavior == "pip" && isPipAvailable() &&
+                ::playerController.isInitialized && playerController.isPlaying
     }
 
     /**
@@ -1461,3 +1554,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player), CustomPlayerCallback 
         return ::streams.isInitialized && streams.isLive
     }
 }
+
+/**
+ * How many extra videos of the currently playing channel are added to the suggestions.
+ */
+private const val CHANNEL_PICKS = 15
+
+/**
+ * How many works of an artist are listed while a song is playing.
+ */
+private const val MUSIC_PICKS = 30
+

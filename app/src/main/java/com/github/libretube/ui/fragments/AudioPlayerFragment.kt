@@ -16,6 +16,7 @@ import androidx.core.math.MathUtils.clamp
 import androidx.core.os.bundleOf
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commit
@@ -41,6 +42,10 @@ import com.github.libretube.helpers.BackgroundHelper
 import com.github.libretube.helpers.ClipboardHelper
 import com.github.libretube.helpers.ImageHelper
 import com.github.libretube.helpers.NavigationHelper
+import com.github.libretube.api.MediaServiceRepository
+import com.github.libretube.api.obj.StreamItem
+import com.github.libretube.api.obj.Streams
+import com.github.libretube.helpers.MusicSuggestions
 import com.github.libretube.helpers.PlayerHelper
 import com.github.libretube.helpers.ThemeHelper
 import com.github.libretube.parcelable.PlayerData
@@ -56,12 +61,15 @@ import com.github.libretube.ui.models.ChaptersViewModel
 import com.github.libretube.ui.models.CommonPlayerViewModel
 import com.github.libretube.ui.sheets.ChaptersBottomSheet
 import com.github.libretube.ui.sheets.PlaybackOptionsSheet
+import com.github.libretube.ui.adapters.VideoCardsAdapter
 import com.github.libretube.ui.sheets.PlayingQueueSheet
 import com.github.libretube.ui.sheets.SleepTimerSheet
 import com.github.libretube.ui.sheets.VideoOptionsBottomSheet
 import com.github.libretube.util.DataSaverMode
 import com.github.libretube.util.PlayingQueue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.absoluteValue
 
 @UnstableApi
@@ -84,6 +92,13 @@ class AudioPlayerFragment : Fragment(R.layout.fragment_audio_player), AudioPlaye
     var isOffline: Boolean = false
         private set
     private var playerController: MediaController? = null
+
+    /** video whose suggestions are currently on screen */
+    private var suggestionsKey: String? = null
+
+    /** searching an artist's works again for every one of their songs would be wasteful */
+    private var cachedArtist: String? = null
+    private var cachedWorks: List<StreamItem> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -361,6 +376,78 @@ class AudioPlayerFragment : Fragment(R.layout.fragment_audio_player), AudioPlaye
         metadata.artworkUri?.let { updateThumbnailAsync(it) }
 
         initializeSeekBar()
+
+        showSuggestions(metadata)
+    }
+
+    /**
+     * List more videos of the artist that is playing. The audio player has no related videos of
+     * its own, and for music the rest of the same channel is what is actually wanted anyway.
+     */
+    private fun showSuggestions(metadata: MediaMetadata) {
+        val binding = _binding ?: return
+        if (!PlayerHelper.relatedStreamsEnabled || isOffline) return
+
+        // the player service hands the whole stream info over, so the suggestions are already
+        // here and cost nothing to read
+        val streams = metadata.extras?.getString(IntentData.streams)?.let {
+            runCatching { JsonHelper.json.decodeFromString<Streams>(it) }.getOrNull()
+        } ?: return
+
+        val videoId = metadata.extras?.getString(IntentData.videoId) ?: return
+        if (videoId == suggestionsKey) return
+        suggestionsKey = videoId
+
+        val adapter = VideoCardsAdapter(columnWidthDp = 250f)
+        binding.relatedRecView.layoutManager =
+            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.relatedRecView.adapter = adapter
+
+        val related = streams.relatedStreams
+            .filter { !it.title.isNullOrBlank() && it.url?.toID() != videoId }
+
+        if (!MusicSuggestions.isMusic(streams.category)) {
+            binding.relatedRecView.isVisible = related.isNotEmpty()
+            adapter.submitList(related)
+            return
+        }
+
+        val artist = MusicSuggestions.artistOf(streams.title, streams.uploader)
+        val (sameArtist, otherArtists) = MusicSuggestions.split(related, artist)
+        binding.relatedRecView.isVisible = sameArtist.isNotEmpty() || otherArtists.isNotEmpty()
+        adapter.submitList(sameArtist + otherArtists)
+
+        lifecycleScope.launch {
+            val works = worksOfArtist(artist, related)
+            if (works.isEmpty()) return@launch
+
+            val currentBinding = _binding ?: return@launch
+            val ordered = MusicSuggestions.order(sameArtist, works, otherArtists)
+            currentBinding.relatedRecView.isVisible = ordered.isNotEmpty()
+            adapter.submitList(ordered)
+        }
+    }
+
+    /**
+     * Search for other work of the artist, leaving out what is suggested anyway. Cached, as
+     * every song of the same artist would otherwise repeat the very same search.
+     */
+    private suspend fun worksOfArtist(artist: String, related: List<StreamItem>): List<StreamItem> {
+        if (artist == cachedArtist) return cachedWorks
+
+        val seenIds = related.mapNotNull { it.url?.toID() }.toHashSet()
+        val works = withContext(Dispatchers.IO) {
+            runCatching {
+                MediaServiceRepository.instance.getSearchResults(artist, "videos").items
+            }.getOrNull().orEmpty()
+                .filter { it.type == StreamItem.TYPE_STREAM }
+                .map { it.toStreamItem() }
+                .filter { !it.title.isNullOrBlank() && it.url?.toID()?.let(seenIds::add) == true }
+        }
+
+        cachedArtist = artist
+        cachedWorks = works
+        return works
     }
 
     private fun updateThumbnailAsync(thumbnailUri: Uri) {

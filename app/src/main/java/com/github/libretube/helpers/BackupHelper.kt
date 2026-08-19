@@ -71,7 +71,11 @@ object BackupHelper {
             }
         }
 
-        restorePreferences(context, backupFile.preferences)
+        // restoring the preferences wipes all existing settings first, so it is opt-in:
+        // importing a backup from another app version must not reset the configuration
+        if (PreferenceHelper.getBoolean(PreferenceKeys.RESTORE_PREFERENCES, false)) {
+            restorePreferences(context, backupFile.preferences)
+        }
     }
 
     /**

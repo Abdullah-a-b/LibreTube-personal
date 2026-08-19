@@ -86,6 +86,16 @@
         <item>mpeg</item>
     </string-array>
 
+    <string-array name="minimizeBehavior">
+        <item>@string/pip</item>
+        <item>@string/background_mode</item>
+        <item>@string/none</item>
+    </string-array>
+    <string-array name="minimizeBehaviorValues">
+        <item>pip</item>
+        <item>background</item>
+        <item>none</item>
+    </string-array>
     <string-array name="fullscreenOrientation">
         <item>@string/aspect_ratio</item>
         <item>@string/auto_rotation</item>

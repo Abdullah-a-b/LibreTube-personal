@@ -52,6 +52,13 @@
             app:key="restore"
             app:title="@string/restore" />
 
+        <SwitchPreferenceCompat
+            android:icon="@drawable/ic_settings"
+            app:defaultValue="false"
+            app:key="restore_preferences"
+            app:summary="@string/restore_preferences_summary"
+            app:title="@string/restore_preferences" />
+
     </PreferenceCategory>
 
 </PreferenceScreen>

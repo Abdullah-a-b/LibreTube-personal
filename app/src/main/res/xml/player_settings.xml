@@ -148,6 +148,15 @@
             app:summary="@string/buffering_goal_summary"
             app:title="@string/buffering_goal" />
 
+        <ListPreference
+            android:icon="@drawable/ic_window"
+            app:defaultValue="pip"
+            app:entries="@array/minimizeBehavior"
+            app:entryValues="@array/minimizeBehaviorValues"
+            app:key="minimize_behavior"
+            app:title="@string/behavior_when_minimized"
+            app:useSimpleSummaryProvider="true" />
+
         <SwitchPreferenceCompat
             android:defaultValue="false"
             android:icon="@drawable/ic_headphones"

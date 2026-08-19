@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.text.HtmlCompat
 import androidx.core.text.parseAsHtml
+import com.github.libretube.BuildConfig
 import com.github.libretube.R
 import com.github.libretube.constants.PreferenceKeys
 import com.github.libretube.ui.adapters.IconsSheetAdapter
@@ -18,6 +19,12 @@ import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
 
 object ThemeHelper {
+    /**
+     * The package the activity aliases are declared under. The manifest merger resolves
+     * relative names against the namespace, which is not necessarily the applicationId.
+     */
+    private val namespace = BuildConfig::class.java.name.substringBeforeLast('.')
+
     /**
      * Set the theme, including accent color and night mode
      */
@@ -78,7 +85,7 @@ object ThemeHelper {
     fun changeIcon(context: Context, newLogoActivityAlias: String) {
         // Disable Old Icon(s)
         for (appIcon in IconsSheetAdapter.availableIcons) {
-            val activityClass = context.packageName.removeSuffix(".debug") + "." + appIcon.activityAlias
+            val activityClass = namespace + "." + appIcon.activityAlias
 
             // remove old icons
             context.packageManager.setComponentEnabledSetting(
@@ -89,7 +96,7 @@ object ThemeHelper {
         }
 
         // set the class name for the activity alias
-        val newLogoActivityClass = context.packageName.removeSuffix(".debug") + "." + newLogoActivityAlias
+        val newLogoActivityClass = namespace + "." + newLogoActivityAlias
         // Enable New Icon
         context.packageManager.setComponentEnabledSetting(
             ComponentName(context.packageName, newLogoActivityClass),

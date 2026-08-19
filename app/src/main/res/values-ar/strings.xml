@@ -156,6 +156,8 @@
     <string name="clonePlaylist">استنسخ قائمة التشغيل</string>
     <string name="deleteAccount">احذف الحساب</string>
     <string name="restore">استعِد</string>
+    <string name="restore_preferences">استعادة الإعدادات أيضاً</string>
+    <string name="restore_preferences_summary">السماح للنسخة الاحتياطية باستبدال إعدادات التطبيق. مطفأ افتراضياً حتى لا يصفّر الاستيراد من تطبيق آخر إعداداتك.</string>
     <string name="deleteAccount_summary">احذف حساب Piped الخاص بك</string>
     <string name="watch_history">سجل المشاهدة</string>
     <string name="watch_positions">تذكر مكان التوقف</string>

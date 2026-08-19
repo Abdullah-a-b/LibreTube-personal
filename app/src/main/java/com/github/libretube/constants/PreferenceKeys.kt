@@ -71,6 +71,17 @@ object PreferenceKeys {
     const val DOUBLE_TAP_TO_SEEK = "double_tap_seek"
     const val LONG_PRESS_FAST_FORWARD = "long_press_fast_forward"
     const val ALTERNATIVE_PIP_CONTROLS = "alternative_pip_controls"
+
+    /**
+     * What should happen when the player gets minimized.
+     * One of "pip", "background" or "none".
+     */
+    const val MINIMIZE_BEHAVIOR = "minimize_behavior"
+
+    /**
+     * Whether restoring a backup is allowed to overwrite the app settings.
+     */
+    const val RESTORE_PREFERENCES = "restore_preferences"
     const val SKIP_SILENCE = "skip_silence"
     const val AUTOPLAY_COUNTDOWN = "autoplay_countdown"
     const val AUTO_FULLSCREEN_SHORTS = "auto_fullscreen_shorts"

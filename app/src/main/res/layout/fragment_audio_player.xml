@@ -300,6 +300,18 @@
 
         </FrameLayout>
 
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/relatedRecView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:clipToPadding="false"
+            android:paddingHorizontal="8dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone"
+            tools:listitem="@layout/video_row"
+            tools:visibility="visible" />
+
     </LinearLayout>
 
     <LinearLayout

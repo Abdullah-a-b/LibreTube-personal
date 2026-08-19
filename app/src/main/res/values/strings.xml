@@ -188,6 +188,8 @@
     <string name="deleteAccount">Delete account</string>
     <string name="deleteAccount_summary">Delete your Piped account</string>
     <string name="restore">Restore</string>
+    <string name="restore_preferences">Restore settings too</string>
+    <string name="restore_preferences_summary">Let a backup overwrite the app settings. Off by default, so that importing from another app cannot reset your configuration.</string>
     <string name="watch_history">Watch history</string>
     <string name="watch_positions">Remember position</string>
     <string name="auth_instance">Authentication instance</string>

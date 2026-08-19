@@ -326,6 +326,12 @@ object PlayerHelper {
             false
         )
 
+    val minimizeBehavior: String
+        get() = PreferenceHelper.getString(
+            PreferenceKeys.MINIMIZE_BEHAVIOR,
+            "pip"
+        )
+
     private val alternativePiPControls: Boolean
         get() = PreferenceHelper.getBoolean(
             PreferenceKeys.ALTERNATIVE_PIP_CONTROLS,
